@@ -429,3 +429,5 @@ git pull
 3. GitHub Action автоматически обновит сервер
 
 ---
+
+© 2025 [Alex Replicator](https://github.com/AlexReplicator). Все права защищены.
