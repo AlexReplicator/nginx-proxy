@@ -103,15 +103,66 @@ if [ -z "$SERVER_IP" ]; then
     echo "ВНИМАНИЕ: Переменная SERVER_IP не установлена. Проверьте файл .env."
 fi
 
-echo "7. Запуск контейнеров..."
-# Запуск контейнеров
+# Создание директорий для сертификатов, если их нет
+mkdir -p certbot/conf
+mkdir -p certbot/www
+
+echo "7. Проверка SSL-настроек и возможное получение сертификатов..."
 if [ "${ENABLE_SSL:-false}" == "true" ]; then
-    echo "SSL включен. Запускаем с профилем SSL."
-    # Проверяем наличие email для SSL
-    if [ -z "$EMAIL_FOR_SSL" ]; then
-        echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
-        export EMAIL_FOR_SSL="example@example.com"
+    echo "SSL включен. Проверка наличия сертификатов..."
+    
+    # Получаем список доменов
+    DOMAINS_LIST=$(echo "$DOMAINS" | tr ',' '\n' | sed 's/:.*//g')
+    
+    # Проверяем наличие сертификатов для каждого домена
+    NEED_CERTS=false
+    for domain in $DOMAINS_LIST; do
+        if [ ! -d "certbot/conf/live/$domain" ]; then
+            echo "Сертификат для домена $domain не найден."
+            NEED_CERTS=true
+        else
+            echo "Сертификат для домена $domain найден."
+        fi
+    done
+    
+    # Если нужны сертификаты, получаем их
+    if [ "$NEED_CERTS" == "true" ]; then
+        echo "Необходимо получить сертификаты. Запускаем процесс получения..."
+        
+        # Проверяем наличие email для SSL
+        if [ -z "$EMAIL_FOR_SSL" ]; then
+            echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
+            export EMAIL_FOR_SSL="example@example.com"
+        fi
+        
+        # Запускаем только Nginx для проверки Let's Encrypt
+        echo "Запуск Nginx для получения сертификатов..."
+        docker-compose up -d nginx
+        
+        # Даем Nginx время на запуск
+        echo "Ожидаем 5 секунд для запуска Nginx..."
+        sleep 5
+        
+        # Формируем список доменов для certbot
+        CERTBOT_DOMAINS=""
+        for domain in $DOMAINS_LIST; do
+            CERTBOT_DOMAINS="$CERTBOT_DOMAINS -d $domain"
+        done
+        
+        # Запускаем certbot для получения сертификатов
+        echo "Запуск Certbot для доменов:$CERTBOT_DOMAINS"
+        docker-compose run --rm certbot certonly --webroot \
+            --webroot-path=/var/www/certbot \
+            --email "$EMAIL_FOR_SSL" \
+            --agree-tos --no-eff-email \
+            $CERTBOT_DOMAINS
+        
+        echo "Сертификаты получены. Перезапускаем с SSL-профилем..."
+    else
+        echo "Все необходимые сертификаты уже получены."
     fi
+    
+    echo "Запуск Docker Compose с профилем SSL..."
     docker-compose --profile ssl up -d --build
 else
     echo "SSL выключен. Запускаем без SSL."
