@@ -3,10 +3,8 @@ FROM nginx:1.25.3-alpine
 # Установка необходимых зависимостей
 RUN apk add --no-cache python3 bash curl
 
-# Создание директорий для сертификатов и конфигураций
-RUN mkdir -p /etc/nginx/conf.d/templates \
-    && mkdir -p /etc/letsencrypt \
-    && mkdir -p /var/www/certbot
+# Создание директорий для конфигураций
+RUN mkdir -p /etc/nginx/conf.d/templates
 
 # Копирование стандартной конфигурации Nginx
 COPY nginx.conf /etc/nginx/nginx.conf
@@ -23,7 +21,7 @@ RUN chmod +x /entrypoint.sh \
 WORKDIR /etc/nginx
 
 # Открываем порты
-EXPOSE 80 443
+EXPOSE 80
 
 # Запуск Nginx с нашим entrypoint скриптом
 ENTRYPOINT ["/entrypoint.sh"]

@@ -103,43 +103,8 @@ if [ -z "$SERVER_IP" ]; then
     echo "ВНИМАНИЕ: Переменная SERVER_IP не установлена. Проверьте файл .env."
 fi
 
-# Создание директорий для сертификатов, если их нет
-mkdir -p certbot/conf
-mkdir -p certbot/www
-
-echo "7. Проверка SSL-настроек..."
-if [ "${ENABLE_SSL:-false}" == "true" ]; then
-    echo "SSL включен, проверка наличия сертификатов..."
-    
-    # Получаем список доменов
-    echo "Извлечение доменов из переменной DOMAINS: $DOMAINS"
-    DOMAINS_LIST=$(echo "$DOMAINS" | tr ',' '\n' | sed 's/:.*//g')
-    echo "Обнаружены домены: $DOMAINS_LIST"
-    
-    # Проверяем наличие сертификатов
-    SSL_SUCCESS=false
-    for domain in $DOMAINS_LIST; do
-        if [ -d "certbot/conf/live/$domain" ]; then
-            echo "Найден сертификат для домена $domain"
-            SSL_SUCCESS=true
-        else
-            echo "ПРЕДУПРЕЖДЕНИЕ: Сертификат для домена $domain не найден."
-        fi
-    done
-    
-    if [ "$SSL_SUCCESS" == "true" ]; then
-        echo "Обнаружены действительные сертификаты. Запускаем с поддержкой SSL..."
-        docker-compose --profile ssl up -d --build
-    else
-        echo "ПРЕДУПРЕЖДЕНИЕ: Не найдены действительные SSL-сертификаты."
-        echo "Запускаем без SSL. Для получения сертификатов выполните отдельно:"
-        echo "DOMAINS='$DOMAINS' EMAIL_FOR_SSL='$EMAIL_FOR_SSL' ./scripts/setup-ssl.sh"
-        docker-compose up -d --build
-    fi
-else
-    echo "SSL выключен. Запускаем без SSL."
-    docker-compose up -d --build
-fi
+echo "7. Запуск Docker Compose..."
+docker-compose up -d --build
 
 echo "8. Проверка запущенных контейнеров..."
 docker-compose ps

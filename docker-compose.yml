@@ -8,35 +8,14 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./docker/nginx/templates:/etc/nginx/conf.d/templates
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
     environment:
       - DOMAINS=${DOMAINS}
       - SERVER_IP=${SERVER_IP}
-      - ENABLE_SSL=${ENABLE_SSL:-false}
       - NOTIFY_EMAIL=${NOTIFY_EMAIL}
     networks:
       - proxy-network
-
-  # Сервис для получения и обновления SSL-сертификатов
-  # Активируется только если ENABLE_SSL=true
-  certbot:
-    image: certbot/certbot:v2.6.0
-    container_name: ${COMPOSE_PROJECT_NAME:-nginx-proxy}_certbot
-    restart: unless-stopped
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    depends_on:
-      - nginx
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-    networks:
-      - proxy-network
-    profiles:
-      - ssl
 
 networks:
   proxy-network:
