@@ -1,10 +1,11 @@
+---
 name: Deploy Nginx Proxy
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:  # Позволяет запускать workflow вручную
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -26,94 +27,38 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
       
-      - name: Check environment before archiving
+      - name: Create archive
         run: |
-          echo "Checking environment..."
-          df -h
-          pwd
-          ls -la
-          echo "Disk space:"
-          df -h .
-          echo "Current directory structure:"
-          find . -maxdepth 2 -type d | sort
-      
-      - name: Create archive (tar method)
-        id: tar_archive
-        continue-on-error: true  # Продолжить выполнение даже при сбое
-        run: |
-          echo "Creating archive with tar..."
-          # Создаем архив проекта с простыми опциями
-          tar -czf nginx-proxy.tar.gz --exclude=".git" --exclude=".github" --exclude="certbot" --exclude=".cursor" .
-          
-          echo "Archive created successfully, checking size:"
+          tar -czf nginx-proxy.tar.gz --exclude=".git" --exclude=".github" \
+            --exclude="certbot" --exclude=".cursor" .
           ls -lh nginx-proxy.tar.gz
-          echo "archive_path=nginx-proxy.tar.gz" >> $GITHUB_OUTPUT
-          echo "archive_type=tar" >> $GITHUB_OUTPUT
       
-      - name: Create archive (zip method)
-        id: zip_archive
-        if: steps.tar_archive.outcome == 'failure'
+      - name: Deploy to server
         run: |
-          echo "Tar method failed, creating archive with zip..."
-          # Создаем временную директорию для копирования файлов
-          mkdir -p /tmp/nginx-proxy-deploy
+          scp nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
           
-          # Копируем только нужные файлы
-          cp -r docker scripts *.yml *.md .env.example /tmp/nginx-proxy-deploy/
-          
-          # Создаем zip архив
-          cd /tmp
-          zip -r nginx-proxy.zip nginx-proxy-deploy
-          mv nginx-proxy.zip $GITHUB_WORKSPACE/
-          cd $GITHUB_WORKSPACE
-          
-          echo "Zip archive created successfully, checking size:"
-          ls -lh nginx-proxy.zip
-          echo "archive_path=nginx-proxy.zip" >> $GITHUB_OUTPUT
-          echo "archive_type=zip" >> $GITHUB_OUTPUT
-      
-      - name: Deploy to server (tar)
-        if: steps.tar_archive.outcome == 'success'
-        run: |
-          echo "Очистка и подготовка удаленной директории..."
-          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            if [ -d '~/nginx-proxy' ]; then
-              echo 'Остановка и удаление контейнеров...';
-              cd ~/nginx-proxy && (docker-compose down -v || true) && (docker rm -f \$(docker ps -aq -f name=nginx-proxy) 2>/dev/null || true);
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            if [ -d ~/nginx-proxy ]; then
+              cd ~/nginx-proxy && docker-compose down -v || true;
+              docker rm -f \$(docker ps -aq -f name=nginx-proxy) 2>/dev/null || true;
             fi;
             
-            echo 'Удаление старого содержимого...';
             rm -rf ~/nginx-proxy/*;
             mkdir -p ~/nginx-proxy;
-          "
-          
-          echo "Copying tar archive to server..."
-          scp -v nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
-          
-          echo "Deploying on server..."
-          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            echo 'Extracting archive...';
             tar -xzf /tmp/nginx-proxy.tar.gz -C ~/nginx-proxy;
-            
-            echo 'Checking files...';
-            ls -la ~/nginx-proxy;
-            ls -la ~/nginx-proxy/scripts;
-            
-            echo 'Setting permissions...';
             chmod +x ~/nginx-proxy/scripts/deploy.sh;
             
-            echo 'Creating environment file...';
-            cat > ~/nginx-proxy/.env << EOL
-DOMAINS=${{ secrets.DOMAINS }}
-SERVER_IP=${{ secrets.SERVER_IP }}
-ENABLE_SSL=${{ secrets.ENABLE_SSL }}
-EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
-NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
-COMPOSE_PROJECT_NAME=nginx-proxy
-EOL
-            
-            echo 'Setting environment...';
             cd ~/nginx-proxy;
+            echo 'Создание файла окружения...';
+            touch .env;
+            echo DOMAINS='${{ secrets.DOMAINS }}' > .env;
+            echo SERVER_IP='${{ secrets.SERVER_IP }}' >> .env;
+            echo ENABLE_SSL='${{ secrets.ENABLE_SSL }}' >> .env;
+            echo EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}' >> .env;
+            echo NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}' >> .env;
+            echo COMPOSE_PROJECT_NAME='nginx-proxy' >> .env;
+            cat .env;
+            
             export DOMAINS='${{ secrets.DOMAINS }}';
             export SERVER_IP='${{ secrets.SERVER_IP }}';
             export ENABLE_SSL='${{ secrets.ENABLE_SSL }}';
@@ -121,73 +66,9 @@ EOL
             export NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}';
             export COMPOSE_PROJECT_NAME='nginx-proxy';
             
-            echo 'Checking Docker installation...';
-            which docker || echo 'Docker not found!';
-            which docker-compose || echo 'Docker-compose not found!';
-            
-            echo 'Running deployment script...';
-            bash -x ./scripts/deploy.sh;
-          "
-      
-      - name: Deploy to server (zip)
-        if: steps.tar_archive.outcome == 'failure' && steps.zip_archive.outcome == 'success'
-        run: |
-          echo "Очистка и подготовка удаленной директории..."
-          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            if [ -d '~/nginx-proxy' ]; then
-              echo 'Остановка и удаление контейнеров...';
-              cd ~/nginx-proxy && (docker-compose down -v || true) && (docker rm -f \$(docker ps -aq -f name=nginx-proxy) 2>/dev/null || true);
-            fi;
-            
-            echo 'Удаление старого содержимого...';
-            rm -rf ~/nginx-proxy/*;
-            mkdir -p ~/nginx-proxy;
-          "
-          
-          echo "Copying zip archive to server..."
-          scp -v nginx-proxy.zip ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
-          
-          echo "Deploying on server..."
-          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            echo 'Extracting archive...';
-            unzip -o /tmp/nginx-proxy.zip -d /tmp/;
-            cp -r /tmp/nginx-proxy-deploy/* ~/nginx-proxy/;
-            
-            echo 'Checking files...';
-            ls -la ~/nginx-proxy;
-            ls -la ~/nginx-proxy/scripts;
-            
-            echo 'Setting permissions...';
-            chmod +x ~/nginx-proxy/scripts/deploy.sh;
-            
-            echo 'Creating environment file...';
-            cat > ~/nginx-proxy/.env << EOL
-DOMAINS=${{ secrets.DOMAINS }}
-SERVER_IP=${{ secrets.SERVER_IP }}
-ENABLE_SSL=${{ secrets.ENABLE_SSL }}
-EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
-NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
-COMPOSE_PROJECT_NAME=nginx-proxy
-EOL
-            
-            echo 'Setting environment...';
-            cd ~/nginx-proxy;
-            export DOMAINS='${{ secrets.DOMAINS }}';
-            export SERVER_IP='${{ secrets.SERVER_IP }}';
-            export ENABLE_SSL='${{ secrets.ENABLE_SSL }}';
-            export EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}';
-            export NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}';
-            export COMPOSE_PROJECT_NAME='nginx-proxy';
-            
-            echo 'Checking Docker installation...';
-            which docker || echo 'Docker not found!';
-            which docker-compose || echo 'Docker-compose not found!';
-            
-            echo 'Running deployment script...';
             bash -x ./scripts/deploy.sh;
           "
       
       - name: Clean up
-        if: always()  # Выполнять даже при ошибке
-        run: |
-          rm ~/.ssh/id_rsa 
+        if: always()
+        run: rm ~/.ssh/id_rsa 
