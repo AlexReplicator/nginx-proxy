@@ -7,6 +7,7 @@
 import os
 import json
 import sys
+import re
 
 def parse_domains():
     """
@@ -40,16 +41,32 @@ def parse_domains():
             for domain_port in domains_env.split(','):
                 if ':' in domain_port:
                     domain, port = domain_port.strip().split(':')
+                    # Очищаем имя домена от недопустимых символов
+                    domain = clean_domain_name(domain)
                     domains[domain] = int(port)
                 else:
                     # Если порт не указан, используем 80 по умолчанию
-                    domains[domain_port.strip()] = 80
+                    domain = clean_domain_name(domain_port.strip())
+                    domains[domain] = 80
             
             print(f"Parsed domains as list: {domains}")
             return domains, server_ip
         except Exception as e:
             print(f"ERROR: Failed to parse DOMAINS: {e}")
             sys.exit(1)
+
+def clean_domain_name(domain):
+    """
+    Очищает имя домена от недопустимых символов для имени файла.
+    
+    Args:
+        domain (str): Имя домена для очистки
+        
+    Returns:
+        str: Очищенное имя домена
+    """
+    # Убираем слеши и другие недопустимые символы
+    return re.sub(r'[^a-zA-Z0-9.-]', '', domain)
 
 def generate_configs(domains, server_ip):
     """
@@ -75,6 +92,9 @@ def generate_configs(domains, server_ip):
     for domain, port in domains.items():
         print(f"Generating config for domain: {domain} -> port: {port}")
         
+        # Очищаем имя домена для использования в имени файла
+        clean_domain = clean_domain_name(domain)
+        
         # Проверяем, существует ли сертификат, если SSL включен
         ssl_cert_path = f"/etc/letsencrypt/live/{domain}/fullchain.pem"
         if enable_ssl and not os.path.exists(ssl_cert_path):
@@ -98,7 +118,7 @@ def generate_configs(domains, server_ip):
         config = config.replace('{{SERVER_IP}}', server_ip)
         
         # Записываем конфигурацию
-        output_path = os.path.join(output_dir, f"{domain}.conf")
+        output_path = os.path.join(output_dir, f"{clean_domain}.conf")
         with open(output_path, 'w') as f:
             f.write(config)
         
