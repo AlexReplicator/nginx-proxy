@@ -29,8 +29,7 @@ jobs:
       
       - name: Create archive
         run: |
-          tar -czf nginx-proxy.tar.gz --exclude=".git" --exclude=".github" \
-            --exclude="certbot" --exclude=".cursor" .
+          tar -czf nginx-proxy.tar.gz --exclude=".git" --exclude=".github" --exclude="certbot" --exclude=".cursor" .
           ls -lh nginx-proxy.tar.gz
       
       - name: Deploy to server
@@ -71,4 +70,4 @@ jobs:
       
       - name: Clean up
         if: always()
-        run: rm ~/.ssh/id_rsa 
+        run: rm ~/.ssh/id_rsa
