@@ -26,30 +26,104 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
       
-      - name: Deploy to server
+      - name: Check environment before archiving
         run: |
-          echo "Creating archive..."
-          # Создаем архив проекта
-          tar -czf nginx-proxy.tar.gz \
-            --warning=no-file-changed \
-            --exclude='./.git' \
-            --exclude='./.github' \
-            --exclude='./certbot' \
-            --exclude='./.cursor' \
-            .
+          echo "Checking environment..."
+          df -h
+          pwd
+          ls -la
+          echo "Disk space:"
+          df -h .
+          echo "Current directory structure:"
+          find . -maxdepth 2 -type d | sort
+      
+      - name: Create archive (tar method)
+        id: tar_archive
+        continue-on-error: true  # Продолжить выполнение даже при сбое
+        run: |
+          echo "Creating archive with tar..."
+          # Создаем архив проекта с простыми опциями
+          tar -czf nginx-proxy.tar.gz --exclude=".git" --exclude=".github" --exclude="certbot" --exclude=".cursor" .
           
-          echo "Copying archive to server..."
-          # Копируем архив на сервер с подробным выводом
+          echo "Archive created successfully, checking size:"
+          ls -lh nginx-proxy.tar.gz
+          echo "archive_path=nginx-proxy.tar.gz" >> $GITHUB_OUTPUT
+          echo "archive_type=tar" >> $GITHUB_OUTPUT
+      
+      - name: Create archive (zip method)
+        id: zip_archive
+        if: steps.tar_archive.outcome == 'failure'
+        run: |
+          echo "Tar method failed, creating archive with zip..."
+          # Создаем временную директорию для копирования файлов
+          mkdir -p /tmp/nginx-proxy-deploy
+          
+          # Копируем только нужные файлы
+          cp -r docker scripts *.yml *.md .env.example /tmp/nginx-proxy-deploy/
+          
+          # Создаем zip архив
+          cd /tmp
+          zip -r nginx-proxy.zip nginx-proxy-deploy
+          mv nginx-proxy.zip $GITHUB_WORKSPACE/
+          cd $GITHUB_WORKSPACE
+          
+          echo "Zip archive created successfully, checking size:"
+          ls -lh nginx-proxy.zip
+          echo "archive_path=nginx-proxy.zip" >> $GITHUB_OUTPUT
+          echo "archive_type=zip" >> $GITHUB_OUTPUT
+      
+      - name: Deploy to server (tar)
+        if: steps.tar_archive.outcome == 'success'
+        run: |
+          echo "Copying tar archive to server..."
           scp -v nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
           
           echo "Deploying on server..."
-          # Выполняем деплой на сервере с дополнительными проверками
           ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
             echo 'Creating directory...';
             mkdir -p ~/nginx-proxy;
             
             echo 'Extracting archive...';
             tar -xzf /tmp/nginx-proxy.tar.gz -C ~/nginx-proxy;
+            
+            echo 'Checking files...';
+            ls -la ~/nginx-proxy;
+            ls -la ~/nginx-proxy/scripts;
+            
+            echo 'Setting permissions...';
+            chmod +x ~/nginx-proxy/scripts/deploy.sh;
+            
+            echo 'Setting environment...';
+            cd ~/nginx-proxy;
+            export DOMAINS='${{ secrets.DOMAINS }}';
+            export SERVER_IP='${{ secrets.SERVER_IP }}';
+            export ENABLE_SSL='${{ secrets.ENABLE_SSL }}';
+            export EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}';
+            export NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}';
+            export COMPOSE_PROJECT_NAME='nginx-proxy';
+            
+            echo 'Checking Docker installation...';
+            which docker || echo 'Docker not found!';
+            which docker-compose || echo 'Docker-compose not found!';
+            
+            echo 'Running deployment script...';
+            bash -x ./scripts/deploy.sh;
+          "
+      
+      - name: Deploy to server (zip)
+        if: steps.tar_archive.outcome == 'failure' && steps.zip_archive.outcome == 'success'
+        run: |
+          echo "Copying zip archive to server..."
+          scp -v nginx-proxy.zip ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+          
+          echo "Deploying on server..."
+          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            echo 'Creating directory...';
+            mkdir -p ~/nginx-proxy;
+            
+            echo 'Extracting archive...';
+            unzip -o /tmp/nginx-proxy.zip -d /tmp/;
+            cp -r /tmp/nginx-proxy-deploy/* ~/nginx-proxy/;
             
             echo 'Checking files...';
             ls -la ~/nginx-proxy;
