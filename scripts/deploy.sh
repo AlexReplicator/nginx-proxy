@@ -109,93 +109,31 @@ mkdir -p certbot/www
 
 echo "7. Проверка SSL-настроек..."
 if [ "${ENABLE_SSL:-false}" == "true" ]; then
-    echo "SSL включен, запускаем процесс настройки SSL..."
+    echo "SSL включен, проверка наличия сертификатов..."
     
     # Получаем список доменов
     echo "Извлечение доменов из переменной DOMAINS: $DOMAINS"
     DOMAINS_LIST=$(echo "$DOMAINS" | tr ',' '\n' | sed 's/:.*//g')
     echo "Обнаружены домены: $DOMAINS_LIST"
     
-    # Полная очистка директорий certbot для избежания проблем с существующими сертификатами
-    echo "Очистка директорий certbot..."
-    rm -rf certbot/conf/live certbot/conf/archive certbot/conf/renewal 2>/dev/null || true
-    
-    # Создаем директории заново
-    mkdir -p certbot/conf
-    mkdir -p certbot/www/.well-known
-    chmod -R 755 certbot/conf
-    chmod -R 755 certbot/www
-    
-    # Проверяем наличие email для SSL
-    if [ -z "$EMAIL_FOR_SSL" ]; then
-        echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
-        export EMAIL_FOR_SSL="example@example.com"
-    fi
-    
-    # Запускаем только Nginx для обработки запросов certbot
-    echo "Запуск Nginx для обработки проверок Let's Encrypt..."
-    docker-compose up -d nginx
-    
-    # Ждем запуска Nginx
-    echo "Ожидаем 10 секунд для полного запуска Nginx..."
-    sleep 10
-    
-    # Проверяем, запущен ли Nginx
-    if ! docker ps | grep -q nginx-proxy_nginx; then
-        echo "ОШИБКА: Nginx не запустился. Проверьте логи:"
-        docker-compose logs nginx
-        exit 1
-    else
-        echo "Nginx успешно запущен и готов обрабатывать запросы Let's Encrypt."
-    fi
-    
-    # Получаем сертификаты для каждого домена отдельно
+    # Проверяем наличие сертификатов
     SSL_SUCCESS=false
-    
     for domain in $DOMAINS_LIST; do
-        echo "Попытка получения сертификата для домена: $domain"
-        
-        # Используем отдельные команды для каждого домена с опцией certonly
-        docker-compose run --rm certbot certonly \
-            --webroot \
-            --webroot-path=/var/www/certbot \
-            --email "$EMAIL_FOR_SSL" \
-            --agree-tos \
-            --no-eff-email \
-            -d "$domain" \
-            --keep \
-            --expand \
-            --renew-by-default
-        
-        # Проверка результата
-        CERT_EXIT_CODE=$?
-        if [ $CERT_EXIT_CODE -ne 0 ]; then
-            echo "ПРЕДУПРЕЖДЕНИЕ: Не удалось получить сертификат для домена $domain (код: $CERT_EXIT_CODE)"
-            echo "Проверьте DNS-настройки и доступность домена из интернета."
-            docker-compose logs certbot
+        if [ -d "certbot/conf/live/$domain" ]; then
+            echo "Найден сертификат для домена $domain"
+            SSL_SUCCESS=true
         else
-            echo "Сертификат для домена $domain успешно получен!"
-            if [ -d "certbot/conf/live/$domain" ]; then
-                echo "Сертификат найден в директории certbot/conf/live/$domain:"
-                ls -la "certbot/conf/live/$domain"
-                SSL_SUCCESS=true
-            else
-                echo "ОШИБКА: Сертификат не найден в ожидаемой директории."
-                # Проверяем все возможные места сертификатов
-                find certbot/conf -type f -name "*.pem" | sort
-            fi
+            echo "ПРЕДУПРЕЖДЕНИЕ: Сертификат для домена $domain не найден."
         fi
     done
     
-    # Останавливаем Nginx перед перезапуском всех сервисов
-    echo "Остановка временного Nginx..."
-    docker-compose down
-    
     if [ "$SSL_SUCCESS" == "true" ]; then
-        echo "Как минимум один сертификат успешно получен. Запускаем с поддержкой SSL..."
+        echo "Обнаружены действительные сертификаты. Запускаем с поддержкой SSL..."
         docker-compose --profile ssl up -d --build
     else
-        echo "ОШИБКА: Не удалось получить ни один SSL-сертификат. Запускаем без SSL."
+        echo "ПРЕДУПРЕЖДЕНИЕ: Не найдены действительные SSL-сертификаты."
+        echo "Запускаем без SSL. Для получения сертификатов выполните отдельно:"
+        echo "DOMAINS='$DOMAINS' EMAIL_FOR_SSL='$EMAIL_FOR_SSL' ./scripts/setup-ssl.sh"
         docker-compose up -d --build
     fi
 else
