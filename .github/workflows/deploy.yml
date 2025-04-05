@@ -94,13 +94,13 @@ jobs:
             chmod +x ~/nginx-proxy/scripts/deploy.sh;
             
             echo 'Creating environment file...';
-            cat > ~/nginx-proxy/.env << 'EOL'
-            DOMAINS='${{ secrets.DOMAINS }}'
-            SERVER_IP='${{ secrets.SERVER_IP }}'
-            ENABLE_SSL='${{ secrets.ENABLE_SSL }}'
-            EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}'
-            NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}'
-            COMPOSE_PROJECT_NAME='nginx-proxy'
+            cat > ~/nginx-proxy/.env << EOL
+            DOMAINS=${{ secrets.DOMAINS }}
+            SERVER_IP=${{ secrets.SERVER_IP }}
+            ENABLE_SSL=${{ secrets.ENABLE_SSL }}
+            EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
+            NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
+            COMPOSE_PROJECT_NAME=nginx-proxy
             EOL
             
             echo 'Setting environment...';
@@ -143,13 +143,13 @@ jobs:
             chmod +x ~/nginx-proxy/scripts/deploy.sh;
             
             echo 'Creating environment file...';
-            cat > ~/nginx-proxy/.env << 'EOL'
-            DOMAINS='${{ secrets.DOMAINS }}'
-            SERVER_IP='${{ secrets.SERVER_IP }}'
-            ENABLE_SSL='${{ secrets.ENABLE_SSL }}'
-            EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}'
-            NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}'
-            COMPOSE_PROJECT_NAME='nginx-proxy'
+            cat > ~/nginx-proxy/.env << EOL
+            DOMAINS=${{ secrets.DOMAINS }}
+            SERVER_IP=${{ secrets.SERVER_IP }}
+            ENABLE_SSL=${{ secrets.ENABLE_SSL }}
+            EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
+            NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
+            COMPOSE_PROJECT_NAME=nginx-proxy
             EOL
             
             echo 'Setting environment...';
