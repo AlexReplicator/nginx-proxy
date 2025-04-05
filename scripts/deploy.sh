@@ -56,6 +56,11 @@ fi
 mkdir -p certbot/conf
 mkdir -p certbot/www
 
+# Остановка и удаление существующих контейнеров (если есть)
+echo "Stopping and removing existing containers..."
+docker-compose down -v || true
+docker rm -f $(docker ps -aq -f name="${COMPOSE_PROJECT_NAME:-nginx-proxy}") 2>/dev/null || true
+
 # Проверяем, включен ли SSL
 if [ "${ENABLE_SSL}" = "true" ]; then
     echo "SSL is enabled, setting up Certbot..."
@@ -84,6 +89,7 @@ if [ "${ENABLE_SSL}" = "true" ]; then
     done
     
     # Запускаем сервисы (nginx с профилем ssl только при включенном SSL)
+    echo "Starting Nginx for SSL certificate acquisition..."
     docker-compose up -d nginx
     
     # Создаем сертификаты для каждого домена
@@ -107,13 +113,16 @@ if [ "${ENABLE_SSL}" = "true" ]; then
     done
     
     # Перезапускаем Nginx для применения сертификатов
+    echo "Restarting Nginx to apply SSL certificates..."
     docker-compose restart nginx
     
     # Запускаем сервис Certbot для автоматического обновления сертификатов
+    echo "Starting Certbot for automatic certificate renewal..."
     docker-compose --profile ssl up -d certbot
     
 else
     echo "SSL is disabled, using HTTP only"
+    echo "Starting Nginx..."
     docker-compose up -d nginx
 fi
 
