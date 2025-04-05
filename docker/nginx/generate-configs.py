@@ -32,7 +32,11 @@ def parse_domains():
     
     # Пробуем парсить как JSON
     try:
-        domains = json.loads(domains_env)
+        raw_domains = json.loads(domains_env)
+        # Дополнительная очистка ключей от слешей
+        for domain, port in raw_domains.items():
+            clean_domain = clean_domain_name(domain)
+            domains[clean_domain] = int(port)
         print(f"Parsed domains as JSON: {domains}")
         return domains, server_ip
     except json.JSONDecodeError:
@@ -66,6 +70,9 @@ def clean_domain_name(domain):
         str: Очищенное имя домена
     """
     # Убираем слеши и другие недопустимые символы
+    # Явное удаление слешей гарантированно
+    domain = domain.replace('/', '')
+    # Дополнительно используем regex для удаления других символов
     return re.sub(r'[^a-zA-Z0-9.-]', '', domain)
 
 def generate_configs(domains, server_ip):

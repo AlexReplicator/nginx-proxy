@@ -75,14 +75,23 @@ jobs:
       - name: Deploy to server (tar)
         if: steps.tar_archive.outcome == 'success'
         run: |
+          echo "Очистка и подготовка удаленной директории..."
+          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            if [ -d '~/nginx-proxy' ]; then
+              echo 'Остановка и удаление контейнеров...';
+              cd ~/nginx-proxy && (docker-compose down -v || true) && (docker rm -f \$(docker ps -aq -f name=nginx-proxy) 2>/dev/null || true);
+            fi;
+            
+            echo 'Удаление старого содержимого...';
+            rm -rf ~/nginx-proxy/*;
+            mkdir -p ~/nginx-proxy;
+          "
+          
           echo "Copying tar archive to server..."
           scp -v nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
           
           echo "Deploying on server..."
           ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            echo 'Creating directory...';
-            mkdir -p ~/nginx-proxy;
-            
             echo 'Extracting archive...';
             tar -xzf /tmp/nginx-proxy.tar.gz -C ~/nginx-proxy;
             
@@ -95,13 +104,13 @@ jobs:
             
             echo 'Creating environment file...';
             cat > ~/nginx-proxy/.env << EOL
-            DOMAINS=${{ secrets.DOMAINS }}
-            SERVER_IP=${{ secrets.SERVER_IP }}
-            ENABLE_SSL=${{ secrets.ENABLE_SSL }}
-            EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
-            NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
-            COMPOSE_PROJECT_NAME=nginx-proxy
-            EOL
+DOMAINS=${{ secrets.DOMAINS }}
+SERVER_IP=${{ secrets.SERVER_IP }}
+ENABLE_SSL=${{ secrets.ENABLE_SSL }}
+EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
+NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
+COMPOSE_PROJECT_NAME=nginx-proxy
+EOL
             
             echo 'Setting environment...';
             cd ~/nginx-proxy;
@@ -123,14 +132,23 @@ jobs:
       - name: Deploy to server (zip)
         if: steps.tar_archive.outcome == 'failure' && steps.zip_archive.outcome == 'success'
         run: |
+          echo "Очистка и подготовка удаленной директории..."
+          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            if [ -d '~/nginx-proxy' ]; then
+              echo 'Остановка и удаление контейнеров...';
+              cd ~/nginx-proxy && (docker-compose down -v || true) && (docker rm -f \$(docker ps -aq -f name=nginx-proxy) 2>/dev/null || true);
+            fi;
+            
+            echo 'Удаление старого содержимого...';
+            rm -rf ~/nginx-proxy/*;
+            mkdir -p ~/nginx-proxy;
+          "
+          
           echo "Copying zip archive to server..."
           scp -v nginx-proxy.zip ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
           
           echo "Deploying on server..."
           ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
-            echo 'Creating directory...';
-            mkdir -p ~/nginx-proxy;
-            
             echo 'Extracting archive...';
             unzip -o /tmp/nginx-proxy.zip -d /tmp/;
             cp -r /tmp/nginx-proxy-deploy/* ~/nginx-proxy/;
@@ -144,13 +162,13 @@ jobs:
             
             echo 'Creating environment file...';
             cat > ~/nginx-proxy/.env << EOL
-            DOMAINS=${{ secrets.DOMAINS }}
-            SERVER_IP=${{ secrets.SERVER_IP }}
-            ENABLE_SSL=${{ secrets.ENABLE_SSL }}
-            EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
-            NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
-            COMPOSE_PROJECT_NAME=nginx-proxy
-            EOL
+DOMAINS=${{ secrets.DOMAINS }}
+SERVER_IP=${{ secrets.SERVER_IP }}
+ENABLE_SSL=${{ secrets.ENABLE_SSL }}
+EMAIL_FOR_SSL=${{ secrets.EMAIL_FOR_SSL }}
+NOTIFY_EMAIL=${{ secrets.NOTIFY_EMAIL }}
+COMPOSE_PROJECT_NAME=nginx-proxy
+EOL
             
             echo 'Setting environment...';
             cd ~/nginx-proxy;

@@ -1,129 +1,127 @@
 #!/bin/bash
 set -e
 
-# Скрипт для деплоя на удаленный сервер
-echo "Starting deployment..."
-
-# Функция для безопасного выполнения sudo команд
+# Функция для выполнения sudo команд безопасно
 safe_sudo() {
-    if command -v sudo &> /dev/null; then
+    if [ -x "$(command -v sudo)" ]; then
         sudo "$@"
     else
-        # Если sudo нет, пытаемся выполнить без него (если у пользователя достаточно прав)
         "$@"
     fi
 }
 
-# Проверка и установка Docker при необходимости
-if ! command -v docker &> /dev/null; then
-    echo "Docker not found. Installing Docker..."
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sh get-docker.sh
-    rm get-docker.sh
-    echo "Docker installed successfully"
-fi
+echo "======== НАЧАЛО ПРОЦЕССА ДЕПЛОЯ ========"
 
-# Проверка и установка Docker Compose при необходимости
-if ! command -v docker-compose &> /dev/null; then
-    echo "Docker Compose not found. Installing Docker Compose..."
-    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+echo "1. Проверка наличия Docker..."
+if ! [ -x "$(command -v docker)" ]; then
+    echo "Docker не установлен. Устанавливаем..."
     
-    # Создаем директорию для бинарных файлов пользователя, если её нет
-    mkdir -p ~/.local/bin
+    # Установка зависимостей
+    apt-get update -y || { echo "Ошибка при обновлении apt"; exit 1; }
+    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release || { echo "Ошибка при установке зависимостей"; exit 1; }
     
-    # Пытаемся установить глобально или в пользовательскую директорию
-    if [ -w /usr/local/bin ]; then
-        curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-        chmod +x /usr/local/bin/docker-compose
-    else
-        echo "No write permission to /usr/local/bin, installing to ~/.local/bin"
-        curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o ~/.local/bin/docker-compose
-        chmod +x ~/.local/bin/docker-compose
-        export PATH="$HOME/.local/bin:$PATH"
-        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-    fi
+    # Добавление Docker GPG ключа
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | safe_sudo apt-key add - || { echo "Ошибка при добавлении GPG ключа"; exit 1; }
     
-    echo "Docker Compose installed successfully"
+    # Добавление репозитория Docker
+    safe_sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" || { 
+        echo "Ошибка при добавлении репозитория. Пробуем альтернативный метод..."
+        echo "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | safe_sudo tee /etc/apt/sources.list.d/docker.list || { echo "Ошибка при создании файла списка источников Docker"; exit 1; }
+    }
     
-    # Проверяем, что Docker Compose теперь доступен
-    if ! command -v docker-compose &> /dev/null; then
-        echo "ERROR: Docker Compose not available in PATH after installation. Please install manually."
+    # Обновление и установка Docker
+    safe_sudo apt-get update -y || { echo "Ошибка при обновлении apt после добавления репозитория Docker"; exit 1; }
+    safe_sudo apt-get install -y docker-ce docker-ce-cli containerd.io || { echo "Ошибка при установке Docker"; exit 1; }
+    
+    # Проверка установки
+    if ! [ -x "$(command -v docker)" ]; then
+        echo "Не удалось установить Docker. Выход."
         exit 1
+    else
+        echo "Docker успешно установлен."
     fi
 fi
 
-# Создаем директории для сертификатов
-mkdir -p certbot/conf
-mkdir -p certbot/www
+echo "2. Проверка наличия Docker Compose..."
+if ! [ -x "$(command -v docker-compose)" ]; then
+    echo "Docker Compose не установлен. Устанавливаем..."
+    
+    # Установка Docker Compose
+    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+    COMPOSE_VERSION=${COMPOSE_VERSION:-v2.21.0} # Fallback версия, если не удается получить последнюю
+    
+    # Установка через curl
+    safe_sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose || {
+        echo "Ошибка при загрузке Docker Compose. Пробуем альтернативный способ..."
+        safe_sudo mkdir -p /usr/local/bin
+        safe_sudo curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose || { echo "Ошибка при установке Docker Compose"; exit 1; }
+    }
+    
+    # Установка прав
+    safe_sudo chmod +x /usr/local/bin/docker-compose || { echo "Ошибка при установке прав на Docker Compose"; exit 1; }
+    
+    # Создание символической ссылки, если необходимо
+    if ! [ -x "$(command -v docker-compose)" ]; then
+        echo "Создаем символическую ссылку для Docker Compose..."
+        safe_sudo ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose || { echo "Ошибка при создании символической ссылки"; exit 1; }
+    fi
+    
+    # Проверка установки
+    if ! [ -x "$(command -v docker-compose)" ]; then
+        echo "Не удалось установить Docker Compose. Выход."
+        exit 1
+    else
+        echo "Docker Compose успешно установлен."
+    fi
+fi
 
-# Остановка и удаление существующих контейнеров (если есть)
-echo "Stopping and removing existing containers..."
+echo "3. Полная остановка и удаление контейнеров..."
+# Остановка и удаление всех контейнеров проекта
 docker-compose down -v || true
 docker rm -f $(docker ps -aq -f name="${COMPOSE_PROJECT_NAME:-nginx-proxy}") 2>/dev/null || true
 
-# Проверяем, включен ли SSL
-if [ "${ENABLE_SSL}" = "true" ]; then
-    echo "SSL is enabled, setting up Certbot..."
-    
-    # Парсим домены для получения сертификатов
-    DOMAINS_ARR=()
-    
-    # Попытка парсить как JSON
-    if [[ "${DOMAINS}" == {* ]]; then
-        # Извлекаем ключи из JSON
-        DOMAINS_KEYS=$(echo "${DOMAINS}" | python3 -c "import sys, json; print(','.join(json.load(sys.stdin).keys()))")
-        IFS=',' read -ra DOMAINS_ARR <<< "${DOMAINS_KEYS}"
+# Удаление неиспользуемых ресурсов
+echo "4. Очистка неиспользуемых Docker ресурсов..."
+docker system prune -f || true
+
+echo "5. Полная очистка директории конфигураций Nginx..."
+rm -rf docker/nginx/conf.d/*.conf 2>/dev/null || true
+
+# Проверка наличия переменных окружения
+echo "6. Проверка наличия переменных окружения..."
+if [ -z "$DOMAINS" ]; then
+    echo "ВНИМАНИЕ: Переменная DOMAINS не установлена. Проверьте файл .env."
+    if [ -f ".env" ]; then
+        echo "Содержимое файла .env:"
+        cat .env
     else
-        # Парсим как список пар домен:порт
-        IFS=',' read -ra DOMAIN_PAIRS <<< "${DOMAINS}"
-        for pair in "${DOMAIN_PAIRS[@]}"; do
-            domain=$(echo "${pair}" | cut -d':' -f1)
-            DOMAINS_ARR+=("${domain}")
-        done
+        echo "Файл .env не найден!"
     fi
-    
-    # Формируем параметры для Certbot
-    CERTBOT_DOMAINS=""
-    for domain in "${DOMAINS_ARR[@]}"; do
-        CERTBOT_DOMAINS="${CERTBOT_DOMAINS} -d ${domain}"
-    done
-    
-    # Запускаем сервисы (nginx с профилем ssl только при включенном SSL)
-    echo "Starting Nginx for SSL certificate acquisition..."
-    docker-compose up -d nginx
-    
-    # Создаем сертификаты для каждого домена
-    for domain in "${DOMAINS_ARR[@]}"; do
-        echo "Requesting SSL certificate for ${domain}..."
-        
-        # Проверяем, существует ли уже сертификат
-        if [ -d "certbot/conf/live/${domain}" ]; then
-            echo "Certificate for ${domain} already exists, skipping"
-            continue
-        fi
-        
-        # Запрашиваем сертификат
-        docker-compose run --rm certbot certonly --webroot \
-            --webroot-path=/var/www/certbot \
-            --email "${EMAIL_FOR_SSL}" \
-            --agree-tos --no-eff-email \
-            -d "${domain}"
-            
-        echo "Certificate for ${domain} obtained successfully"
-    done
-    
-    # Перезапускаем Nginx для применения сертификатов
-    echo "Restarting Nginx to apply SSL certificates..."
-    docker-compose restart nginx
-    
-    # Запускаем сервис Certbot для автоматического обновления сертификатов
-    echo "Starting Certbot for automatic certificate renewal..."
-    docker-compose --profile ssl up -d certbot
-    
-else
-    echo "SSL is disabled, using HTTP only"
-    echo "Starting Nginx..."
-    docker-compose up -d nginx
 fi
 
-echo "Deployment completed successfully" 
+if [ -z "$SERVER_IP" ]; then
+    echo "ВНИМАНИЕ: Переменная SERVER_IP не установлена. Проверьте файл .env."
+fi
+
+echo "7. Запуск контейнеров..."
+# Запуск контейнеров
+if [ "${ENABLE_SSL:-false}" == "true" ]; then
+    echo "SSL включен. Запускаем с профилем SSL."
+    # Проверяем наличие email для SSL
+    if [ -z "$EMAIL_FOR_SSL" ]; then
+        echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
+        export EMAIL_FOR_SSL="example@example.com"
+    fi
+    docker-compose --profile ssl up -d --build
+else
+    echo "SSL выключен. Запускаем без SSL."
+    docker-compose up -d --build
+fi
+
+echo "8. Проверка запущенных контейнеров..."
+docker-compose ps
+
+echo "9. Просмотр логов (последние 10 строк)..."
+docker-compose logs --tail=10
+
+echo "======== ПРОЦЕСС ДЕПЛОЯ ЗАВЕРШЕН ========" 
