@@ -4,6 +4,54 @@ set -e
 # Скрипт для деплоя на удаленный сервер
 echo "Starting deployment..."
 
+# Функция для безопасного выполнения sudo команд
+safe_sudo() {
+    if command -v sudo &> /dev/null; then
+        sudo "$@"
+    else
+        # Если sudo нет, пытаемся выполнить без него (если у пользователя достаточно прав)
+        "$@"
+    fi
+}
+
+# Проверка и установка Docker при необходимости
+if ! command -v docker &> /dev/null; then
+    echo "Docker not found. Installing Docker..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+    rm get-docker.sh
+    echo "Docker installed successfully"
+fi
+
+# Проверка и установка Docker Compose при необходимости
+if ! command -v docker-compose &> /dev/null; then
+    echo "Docker Compose not found. Installing Docker Compose..."
+    COMPOSE_VERSION=$(curl -s https://api.github.com/repos/docker/compose/releases/latest | grep 'tag_name' | cut -d\" -f4)
+    
+    # Создаем директорию для бинарных файлов пользователя, если её нет
+    mkdir -p ~/.local/bin
+    
+    # Пытаемся установить глобально или в пользовательскую директорию
+    if [ -w /usr/local/bin ]; then
+        curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+        chmod +x /usr/local/bin/docker-compose
+    else
+        echo "No write permission to /usr/local/bin, installing to ~/.local/bin"
+        curl -L "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" -o ~/.local/bin/docker-compose
+        chmod +x ~/.local/bin/docker-compose
+        export PATH="$HOME/.local/bin:$PATH"
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+    fi
+    
+    echo "Docker Compose installed successfully"
+    
+    # Проверяем, что Docker Compose теперь доступен
+    if ! command -v docker-compose &> /dev/null; then
+        echo "ERROR: Docker Compose not available in PATH after installation. Please install manually."
+        exit 1
+    fi
+fi
+
 # Создаем директории для сертификатов
 mkdir -p certbot/conf
 mkdir -p certbot/www

@@ -17,6 +17,7 @@ jobs:
       - name: Set permissions for scripts
         run: |
           chmod +x scripts/deploy.sh
+          ls -la scripts/
       
       - name: Set up SSH key
         run: |
@@ -27,6 +28,7 @@ jobs:
       
       - name: Deploy to server
         run: |
+          echo "Creating archive..."
           # Создаем архив проекта
           tar -czf nginx-proxy.tar.gz \
             --warning=no-file-changed \
@@ -36,13 +38,27 @@ jobs:
             --exclude='./.cursor' \
             .
           
-          # Копируем архив на сервер
-          scp nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+          echo "Copying archive to server..."
+          # Копируем архив на сервер с подробным выводом
+          scp -v nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
           
-          # Выполняем деплой на сервере
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+          echo "Deploying on server..."
+          # Выполняем деплой на сервере с дополнительными проверками
+          ssh -v ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            echo 'Creating directory...';
             mkdir -p ~/nginx-proxy;
+            
+            echo 'Extracting archive...';
             tar -xzf /tmp/nginx-proxy.tar.gz -C ~/nginx-proxy;
+            
+            echo 'Checking files...';
+            ls -la ~/nginx-proxy;
+            ls -la ~/nginx-proxy/scripts;
+            
+            echo 'Setting permissions...';
+            chmod +x ~/nginx-proxy/scripts/deploy.sh;
+            
+            echo 'Setting environment...';
             cd ~/nginx-proxy;
             export DOMAINS='${{ secrets.DOMAINS }}';
             export SERVER_IP='${{ secrets.SERVER_IP }}';
@@ -50,9 +66,16 @@ jobs:
             export EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}';
             export NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}';
             export COMPOSE_PROJECT_NAME='nginx-proxy';
-            ./scripts/deploy.sh;
+            
+            echo 'Checking Docker installation...';
+            which docker || echo 'Docker not found!';
+            which docker-compose || echo 'Docker-compose not found!';
+            
+            echo 'Running deployment script...';
+            bash -x ./scripts/deploy.sh;
           "
       
       - name: Clean up
+        if: always()  # Выполнять даже при ошибке
         run: |
           rm ~/.ssh/id_rsa 
