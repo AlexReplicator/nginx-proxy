@@ -1,0 +1,57 @@
+name: Deploy Nginx Proxy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Позволяет запускать workflow вручную
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set permissions for scripts
+        run: |
+          chmod +x scripts/deploy.sh
+      
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+      
+      - name: Deploy to server
+        run: |
+          # Создаем архив проекта
+          tar -czf nginx-proxy.tar.gz \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./certbot' \
+            --exclude='./.cursor' \
+            .
+          
+          # Копируем архив на сервер
+          scp nginx-proxy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+          
+          # Выполняем деплой на сервере
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "
+            mkdir -p ~/nginx-proxy;
+            tar -xzf /tmp/nginx-proxy.tar.gz -C ~/nginx-proxy;
+            cd ~/nginx-proxy;
+            export DOMAINS='${{ secrets.DOMAINS }}';
+            export SERVER_IP='${{ secrets.SERVER_IP }}';
+            export ENABLE_SSL='${{ secrets.ENABLE_SSL }}';
+            export EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}';
+            export NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}';
+            export COMPOSE_PROJECT_NAME='nginx-proxy';
+            ./scripts/deploy.sh;
+          "
+      
+      - name: Clean up
+        run: |
+          rm ~/.ssh/id_rsa 

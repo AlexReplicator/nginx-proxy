@@ -1,0 +1,31 @@
+# Общие файлы
+.env
+.env.*
+*.log
+*.tmp
+
+# Директории
+node_modules/
+__pycache__/
+.vscode/
+.idea/
+.cursor/
+
+# Сертификаты и конфиги
+certbot/
+letsencrypt/
+*.pem
+*.key
+*.crt
+
+# Архивы
+*.tar
+*.gz
+*.zip
+
+# Временные файлы
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db 
