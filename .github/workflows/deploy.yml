@@ -29,8 +29,10 @@ jobs:
       
       - name: Create archive
         run: |
-          tar -czf nginx-proxy.tar.gz --exclude=".git" --exclude=".github" --exclude="certbot" --exclude=".cursor" .
-          ls -lh nginx-proxy.tar.gz
+          mkdir -p /tmp/nginx-proxy-build
+          tar -czf /tmp/nginx-proxy-build/nginx-proxy.tar.gz --exclude=".git" --exclude=".github" --exclude="certbot" --exclude=".cursor" .
+          ls -lh /tmp/nginx-proxy-build/nginx-proxy.tar.gz
+          cp /tmp/nginx-proxy-build/nginx-proxy.tar.gz .
       
       - name: Deploy to server
         run: |
