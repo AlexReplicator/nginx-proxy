@@ -107,95 +107,93 @@ fi
 mkdir -p certbot/conf
 mkdir -p certbot/www
 
-echo "7. Проверка SSL-настроек и возможное получение сертификатов..."
+echo "7. Проверка SSL-настроек..."
 if [ "${ENABLE_SSL:-false}" == "true" ]; then
-    echo "SSL включен. Проверка наличия сертификатов..."
+    echo "SSL включен, запускаем процесс настройки SSL..."
     
     # Получаем список доменов
     echo "Извлечение доменов из переменной DOMAINS: $DOMAINS"
     DOMAINS_LIST=$(echo "$DOMAINS" | tr ',' '\n' | sed 's/:.*//g')
     echo "Обнаружены домены: $DOMAINS_LIST"
     
-    # Проверяем наличие сертификатов для каждого домена
-    NEED_CERTS=true  # Всегда получаем сертификаты при включенном SSL
-    for domain in $DOMAINS_LIST; do
-        if [ ! -d "certbot/conf/live/$domain" ]; then
-            echo "Сертификат для домена $domain не найден."
-        else
-            echo "Обнаружен существующий сертификат для домена $domain, но будет запрошен новый."
-        fi
-    done
+    # Удаляем существующие сертификаты (полная перегенерация)
+    echo "Удаление существующих сертификатов (если есть)..."
+    rm -rf certbot/conf/live/* certbot/conf/archive/* certbot/conf/renewal/* 2>/dev/null || true
     
-    # Если нужны сертификаты, получаем их
-    if [ "$NEED_CERTS" == "true" ]; then
-        echo "Необходимо получить сертификаты. Запускаем процесс получения..."
+    # Проверяем наличие email для SSL
+    if [ -z "$EMAIL_FOR_SSL" ]; then
+        echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
+        export EMAIL_FOR_SSL="example@example.com"
+    fi
+    
+    # Запускаем только Nginx для процесса проверки домена
+    echo "Запуск Nginx для обработки проверок Let's Encrypt..."
+    docker-compose up -d nginx
+    
+    # Даем Nginx время на запуск
+    echo "Ожидаем 10 секунд для полного запуска Nginx..."
+    sleep 10
+    
+    # Проверяем, запущен ли Nginx
+    if ! docker ps | grep -q nginx-proxy_nginx; then
+        echo "ОШИБКА: Nginx не запустился. Проверьте логи:"
+        docker-compose logs nginx
+        exit 1
+    else
+        echo "Nginx успешно запущен и готов обрабатывать запросы Let's Encrypt."
+    fi
+    
+    # Получаем сертификаты для каждого домена отдельно
+    for domain in $DOMAINS_LIST; do
+        echo "Получение сертификата для домена: $domain"
         
-        # Проверяем наличие email для SSL
-        if [ -z "$EMAIL_FOR_SSL" ]; then
-            echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
-            export EMAIL_FOR_SSL="example@example.com"
-        fi
-        
-        # Убеждаемся, что все службы остановлены
-        echo "Остановка всех существующих контейнеров..."
-        docker-compose down || true
-        
-        # Запускаем только Nginx для проверки Let's Encrypt
-        echo "Запуск Nginx для получения сертификатов..."
-        docker-compose up -d nginx
-        
-        # Даем Nginx время на запуск
-        echo "Ожидаем 5 секунд для запуска Nginx..."
-        sleep 5
-        
-        # Проверяем, запущен ли Nginx
-        if ! docker ps | grep -q nginx-proxy_nginx; then
-            echo "ОШИБКА: Nginx не запустился. Проверьте логи:"
-            docker-compose logs nginx
-            exit 1
-        else
-            echo "Nginx успешно запущен."
-        fi
-        
-        # Формируем список доменов для certbot
-        CERTBOT_DOMAINS=""
-        for domain in $DOMAINS_LIST; do
-            CERTBOT_DOMAINS="$CERTBOT_DOMAINS -d $domain"
-        done
-        
-        # Запускаем certbot для получения сертификатов
-        echo "Запуск Certbot для доменов:$CERTBOT_DOMAINS"
-        echo "Запускаем команду: docker-compose run --rm certbot certonly --webroot --webroot-path=/var/www/certbot --email \"$EMAIL_FOR_SSL\" --agree-tos --no-eff-email --force-renewal $CERTBOT_DOMAINS"
-        
-        docker-compose run --rm --no-deps certbot certonly --webroot \
+        # Запускаем certbot для одного домена
+        docker-compose run --rm certbot certonly \
+            --webroot \
             --webroot-path=/var/www/certbot \
             --email "$EMAIL_FOR_SSL" \
-            --agree-tos --no-eff-email \
-            --force-renewal \
-            $CERTBOT_DOMAINS
+            --agree-tos \
+            --no-eff-email \
+            --domain $domain \
+            --non-interactive \
+            --verbose
         
         # Проверка результата
         CERT_EXIT_CODE=$?
         if [ $CERT_EXIT_CODE -ne 0 ]; then
-            echo "ОШИБКА: Не удалось получить сертификаты (код выхода: $CERT_EXIT_CODE)."
-            echo "Вывод логов certbot:"
-            docker-compose logs certbot
-            echo "Вывод логов nginx:"
-            docker-compose logs nginx
-            echo "Продолжаем запуск без SSL..."
-            docker-compose up -d --build
-            exit 1
+            echo "ПРЕДУПРЕЖДЕНИЕ: Не удалось получить сертификат для домена $domain (код: $CERT_EXIT_CODE)."
+            echo "Проверьте DNS-настройки и доступность домена из интернета."
         else
-            echo "Сертификаты успешно получены. Перезапускаем с SSL-профилем..."
-            # Остановка Nginx перед перезапуском
-            docker-compose down
-            # Запуск с профилем SSL
-            docker-compose --profile ssl up -d --build
+            echo "Сертификат для домена $domain успешно получен!"
+            # Проверяем, что сертификат действительно создан
+            if [ -d "certbot/conf/live/$domain" ]; then
+                echo "Сертификат найден в директории certbot/conf/live/$domain"
+                ls -la "certbot/conf/live/$domain"
+            else
+                echo "ОШИБКА: Сертификат не найден в ожидаемой директории!"
+            fi
         fi
-    else
-        echo "Все необходимые сертификаты уже получены."
-        echo "Запуск Docker Compose с профилем SSL..."
+    done
+    
+    # Проверяем наличие хотя бы одного успешно полученного сертификата
+    SSL_SUCCESS=false
+    for domain in $DOMAINS_LIST; do
+        if [ -d "certbot/conf/live/$domain" ]; then
+            SSL_SUCCESS=true
+            break
+        fi
+    done
+    
+    # Останавливаем Nginx перед перезапуском всех сервисов
+    echo "Остановка временного Nginx..."
+    docker-compose down
+    
+    if [ "$SSL_SUCCESS" == "true" ]; then
+        echo "Как минимум один сертификат успешно получен. Запускаем с поддержкой SSL..."
         docker-compose --profile ssl up -d --build
+    else
+        echo "ОШИБКА: Не удалось получить ни один SSL-сертификат. Запускаем без SSL."
+        docker-compose up -d --build
     fi
 else
     echo "SSL выключен. Запускаем без SSL."
