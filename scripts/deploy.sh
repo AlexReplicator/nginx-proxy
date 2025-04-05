@@ -116,42 +116,23 @@ if [ "${ENABLE_SSL:-false}" == "true" ]; then
     DOMAINS_LIST=$(echo "$DOMAINS" | tr ',' '\n' | sed 's/:.*//g')
     echo "Обнаружены домены: $DOMAINS_LIST"
     
+    # Полная очистка директорий certbot для избежания проблем с существующими сертификатами
+    echo "Очистка директорий certbot..."
+    rm -rf certbot/conf/live certbot/conf/archive certbot/conf/renewal 2>/dev/null || true
+    
+    # Создаем директории заново
+    mkdir -p certbot/conf
+    mkdir -p certbot/www/.well-known
+    chmod -R 755 certbot/conf
+    chmod -R 755 certbot/www
+    
     # Проверяем наличие email для SSL
     if [ -z "$EMAIL_FOR_SSL" ]; then
         echo "ВНИМАНИЕ: EMAIL_FOR_SSL не установлен, используем значение по умолчанию."
         export EMAIL_FOR_SSL="example@example.com"
     fi
     
-    # Полностью удаляем директорию certbot/conf и пересоздаем
-    echo "Удаление всех существующих сертификатов и конфигураций certbot..."
-    rm -rf certbot/conf
-    mkdir -p certbot/conf
-    chmod -R 755 certbot/conf
-    
-    # Создаем директорию для проверки certbot
-    mkdir -p certbot/www/.well-known
-    chmod -R 755 certbot/www
-    
-    # Устанавливаем certbot из репозитория, если его нет
-    if ! [ -x "$(command -v certbot)" ]; then
-        echo "Certbot не установлен. Устанавливаем..."
-        safe_sudo apt-get update -y
-        safe_sudo apt-get install -y software-properties-common
-        safe_sudo add-apt-repository -y ppa:certbot/certbot || {
-            echo "Не удалось добавить репозиторий Certbot. Пробуем альтернативный метод..."
-            safe_sudo apt-get install -y python3-certbot || {
-                echo "Не удалось установить Certbot. Выход."
-                exit 1
-            }
-        }
-        safe_sudo apt-get update -y
-        safe_sudo apt-get install -y certbot || {
-            echo "Не удалось установить Certbot. Выход."
-            exit 1
-        }
-    fi
-    
-    # Запускаем Nginx для обработки запросов certbot
+    # Запускаем только Nginx для обработки запросов certbot
     echo "Запуск Nginx для обработки проверок Let's Encrypt..."
     docker-compose up -d nginx
     
@@ -168,56 +149,40 @@ if [ "${ENABLE_SSL:-false}" == "true" ]; then
         echo "Nginx успешно запущен и готов обрабатывать запросы Let's Encrypt."
     fi
     
-    # Получаем сертификаты для каждого домена с помощью установленного certbot
+    # Получаем сертификаты для каждого домена отдельно
     SSL_SUCCESS=false
     
     for domain in $DOMAINS_LIST; do
         echo "Попытка получения сертификата для домена: $domain"
         
-        # Используем встроенный certbot вместо контейнера
-        safe_sudo certbot certonly \
+        # Используем отдельные команды для каждого домена с опцией certonly
+        docker-compose run --rm certbot certonly \
             --webroot \
-            --webroot-path="$(pwd)/certbot/www" \
+            --webroot-path=/var/www/certbot \
             --email "$EMAIL_FOR_SSL" \
             --agree-tos \
             --no-eff-email \
-            --domain "$domain" \
-            --non-interactive \
-            --force-renewal \
-            --debug-challenges
+            -d "$domain" \
+            --keep \
+            --expand \
+            --renew-by-default
         
+        # Проверка результата
         CERT_EXIT_CODE=$?
         if [ $CERT_EXIT_CODE -ne 0 ]; then
             echo "ПРЕДУПРЕЖДЕНИЕ: Не удалось получить сертификат для домена $domain (код: $CERT_EXIT_CODE)"
             echo "Проверьте DNS-настройки и доступность домена из интернета."
+            docker-compose logs certbot
         else
             echo "Сертификат для домена $domain успешно получен!"
-            
-            # Копируем сертификаты из системной директории certbot в проектную
-            CERT_PATH="/etc/letsencrypt/live/$domain"
-            if [ -d "$CERT_PATH" ]; then
-                echo "Копирование сертификатов из $CERT_PATH в certbot/conf/live/$domain"
-                mkdir -p "certbot/conf/live/$domain"
-                safe_sudo cp -L "$CERT_PATH/privkey.pem" "certbot/conf/live/$domain/"
-                safe_sudo cp -L "$CERT_PATH/fullchain.pem" "certbot/conf/live/$domain/"
-                safe_sudo cp -L "$CERT_PATH/cert.pem" "certbot/conf/live/$domain/"
-                safe_sudo cp -L "$CERT_PATH/chain.pem" "certbot/conf/live/$domain/"
-                
-                # Устанавливаем правильные права
-                chmod 644 "certbot/conf/live/$domain/"*
-                
-                # Копируем также файлы обновления
-                mkdir -p "certbot/conf/renewal"
-                if [ -f "/etc/letsencrypt/renewal/$domain.conf" ]; then
-                    safe_sudo cp "/etc/letsencrypt/renewal/$domain.conf" "certbot/conf/renewal/"
-                fi
-                
-                # Помечаем, что хотя бы один сертификат получен успешно
-                SSL_SUCCESS=true
-                echo "Сертификаты скопированы успешно:"
+            if [ -d "certbot/conf/live/$domain" ]; then
+                echo "Сертификат найден в директории certbot/conf/live/$domain:"
                 ls -la "certbot/conf/live/$domain"
+                SSL_SUCCESS=true
             else
-                echo "ОШИБКА: Сертификат получен, но директория $CERT_PATH не найдена!"
+                echo "ОШИБКА: Сертификат не найден в ожидаемой директории."
+                # Проверяем все возможные места сертификатов
+                find certbot/conf -type f -name "*.pem" | sort
             fi
         fi
     done
