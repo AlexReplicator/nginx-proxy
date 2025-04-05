@@ -29,6 +29,7 @@ jobs:
         run: |
           # Создаем архив проекта
           tar -czf nginx-proxy.tar.gz \
+            --warning=no-file-changed \
             --exclude='./.git' \
             --exclude='./.github' \
             --exclude='./certbot' \
