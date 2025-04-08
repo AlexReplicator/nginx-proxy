@@ -126,7 +126,21 @@ if [ "${ENABLE_SSL:-false}" = "true" ]; then
     
     echo "Получение сертификатов для доменов: $domain_list"
     
+    # Отладочная информация
+    echo "DEBUG: Проверка переменных окружения:"
+    echo "DEBUG: ENABLE_SSL=${ENABLE_SSL}"
+    echo "DEBUG: EMAIL_FOR_SSL=${EMAIL_FOR_SSL}"
+    echo "DEBUG: DOMAINS=${DOMAINS}"
+    echo "DEBUG: SERVER_IP=${SERVER_IP}"
+    
+    # Проверка директорий certbot
+    echo "DEBUG: Проверка директорий certbot:"
+    ls -la ./certbot/
+    
     # Первоначальное получение сертификатов
+    echo "DEBUG: Запуск certbot с параметрами:"
+    echo "DEBUG: --webroot --webroot-path=/var/www/certbot --email ${EMAIL_FOR_SSL} --agree-tos --no-eff-email $domain_list --force-renewal"
+    
     docker-compose run --rm certbot certonly --webroot \
         --webroot-path=/var/www/certbot \
         --email "${EMAIL_FOR_SSL}" \
@@ -139,6 +153,8 @@ if [ "${ENABLE_SSL:-false}" = "true" ]; then
             echo "1. Правильность DNS-записей"
             echo "2. Доступность портов 80 и 443"
             echo "3. Корректность email в EMAIL_FOR_SSL"
+            echo "4. Логи certbot:"
+            docker-compose logs certbot
             exit 1
         }
     

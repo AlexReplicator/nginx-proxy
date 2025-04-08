@@ -1,6 +1,12 @@
 #!/bin/bash
 set -e
 
+# Создание необходимых директорий
+echo "Creating required directories..."
+mkdir -p /var/www/certbot
+chown -R nginx:nginx /var/www/certbot
+chmod -R 755 /var/www/certbot
+
 # Функция для генерации конфигурации Nginx
 generate_nginx_configs() {
     echo "Generating Nginx configurations..."
