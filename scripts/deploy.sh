@@ -106,10 +106,52 @@ fi
 echo "7. Запуск Docker Compose..."
 docker-compose up -d --build
 
-echo "8. Проверка запущенных контейнеров..."
+# Получение и обновление SSL-сертификатов, если включено SSL
+if [ "${ENABLE_SSL:-false}" = "true" ]; then
+    echo "8. Настройка SSL-сертификатов..."
+    
+    # Создание директорий для сертификатов
+    mkdir -p ./certbot/conf
+    mkdir -p ./certbot/www
+    
+    # Подготовка массива доменов
+    IFS=',' read -r -a domain_array <<< "$DOMAINS"
+    domain_list=""
+    
+    for domain_entry in "${domain_array[@]}"; do
+        # Извлекаем домен из формата domain:port или {"domain":port}
+        domain=$(echo "$domain_entry" | sed -E 's/(.*):([0-9]+)/\1/' | sed -E 's/["{},]//g')
+        domain_list="$domain_list -d $domain"
+    done
+    
+    echo "Получение сертификатов для доменов: $domain_list"
+    
+    # Первоначальное получение сертификатов
+    docker-compose run --rm certbot certonly --webroot \
+        --webroot-path=/var/www/certbot \
+        --email "${EMAIL_FOR_SSL}" \
+        --agree-tos \
+        --no-eff-email \
+        $domain_list \
+        --force-renewal || {
+            echo "ОШИБКА: Не удалось получить SSL-сертификаты"
+            echo "Проверьте:"
+            echo "1. Правильность DNS-записей"
+            echo "2. Доступность портов 80 и 443"
+            echo "3. Корректность email в EMAIL_FOR_SSL"
+            exit 1
+        }
+    
+    # Перезапуск nginx для применения SSL конфигурации
+    docker-compose restart nginx
+    
+    echo "SSL-сертификаты успешно получены и настроены."
+fi
+
+echo "9. Проверка запущенных контейнеров..."
 docker-compose ps
 
-echo "9. Просмотр логов (последние 10 строк)..."
+echo "10. Просмотр логов (последние 10 строк)..."
 docker-compose logs --tail=10
 
 echo "======== ПРОЦЕСС ДЕПЛОЯ ЗАВЕРШЕН ========" 

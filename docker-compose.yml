@@ -8,14 +8,29 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./docker/nginx/templates:/etc/nginx/conf.d/templates
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
     environment:
       - DOMAINS=${DOMAINS}
       - SERVER_IP=${SERVER_IP}
       - NOTIFY_EMAIL=${NOTIFY_EMAIL}
+      - ENABLE_SSL=${ENABLE_SSL:-false}
+      - EMAIL_FOR_SSL=${EMAIL_FOR_SSL}
     networks:
       - proxy-network
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: ${COMPOSE_PROJECT_NAME:-nginx-proxy}_certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+    depends_on:
+      - nginx
 
 networks:
   proxy-network:
