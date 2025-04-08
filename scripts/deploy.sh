@@ -110,9 +110,11 @@ docker-compose up -d --build
 if [ "${ENABLE_SSL:-false}" = "true" ]; then
     echo "8. Настройка SSL-сертификатов..."
     
-    # Создание директорий для сертификатов
+    # Создание директорий для сертификатов с правильными правами
     mkdir -p ./certbot/conf
     mkdir -p ./certbot/www
+    chown -R 101:101 ./certbot/www  # 101 - это UID/GID пользователя nginx в Alpine
+    chmod -R 755 ./certbot/www
     
     # Подготовка массива доменов
     IFS=',' read -r -a domain_array <<< "$DOMAINS"
