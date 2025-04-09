@@ -112,4 +112,23 @@ docker-compose ps
 echo "9. Просмотр логов (последние 10 строк)..."
 docker-compose logs --tail=10
 
+# Проверка включен ли SSL и запуск получения сертификатов
+echo "10. Проверка необходимости получения SSL-сертификатов..."
+if [ "${ENABLE_SSL}" = "true" ]; then
+    echo "SSL включен (ENABLE_SSL=true). Запускаем процесс получения сертификатов..."
+    
+    # Устанавливаем разрешения на выполнение скрипта
+    chmod +x ./scripts/get-certificates.sh
+    
+    # Запускаем скрипт получения сертификатов в контейнере nginx
+    docker exec -e DOMAINS="${DOMAINS}" \
+               -e EMAIL_FOR_SSL="${EMAIL_FOR_SSL}" \
+               -e ENABLE_SSL="${ENABLE_SSL}" \
+               ${COMPOSE_PROJECT_NAME:-nginx-proxy}_nginx /scripts/get-certificates.sh
+    
+    echo "Процесс получения сертификатов завершен."
+else
+    echo "SSL отключен (ENABLE_SSL не равно true). Для включения установите ENABLE_SSL=true в .env или GitHub Secrets."
+fi
+
 echo "======== ПРОЦЕСС ДЕПЛОЯ ЗАВЕРШЕН ========" 
