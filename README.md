@@ -355,9 +355,3 @@ docker volume prune -f
 ./scripts/deploy.sh
 ```
 
----
-
-<div align="center">
-  <p>Сделано с ❤️ для самого удобного управления доменами и сервисами</p>
-  <p>© 2024 GitHub User. <a href="https://github.com/yourusername/nginx-proxy">GitHub Репозиторий</a></p>
-</div>
