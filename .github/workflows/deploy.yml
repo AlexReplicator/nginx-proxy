@@ -18,6 +18,7 @@ jobs:
       - name: Set permissions for scripts
         run: |
           chmod +x scripts/deploy.sh
+          chmod +x scripts/get-certificates.sh
           ls -la scripts/
       
       - name: Set up SSH key
@@ -48,6 +49,7 @@ jobs:
             mkdir -p ~/nginx-proxy;
             tar -xzf /tmp/nginx-proxy.tar.gz -C ~/nginx-proxy;
             chmod +x ~/nginx-proxy/scripts/deploy.sh;
+            chmod +x ~/nginx-proxy/scripts/get-certificates.sh;
             
             cd ~/nginx-proxy;
             echo 'Создание файла окружения...';
@@ -66,6 +68,17 @@ jobs:
             export EMAIL_FOR_SSL='${{ secrets.EMAIL_FOR_SSL }}';
             export NOTIFY_EMAIL='${{ secrets.NOTIFY_EMAIL }}';
             export COMPOSE_PROJECT_NAME='nginx-proxy';
+            
+            # Убеждаемся, что порт 443 открыт в firewall
+            if [ '${{ secrets.ENABLE_SSL }}' = 'true' ]; then
+              echo 'Проверка и настройка файрвола для SSL (порт 443)...';
+              if command -v ufw &> /dev/null; then
+                sudo ufw status | grep -q '443/tcp' || sudo ufw allow 443/tcp;
+              elif command -v firewall-cmd &> /dev/null; then
+                sudo firewall-cmd --permanent --add-port=443/tcp;
+                sudo firewall-cmd --reload;
+              fi
+            fi;
             
             bash -x ./scripts/deploy.sh;
           "
