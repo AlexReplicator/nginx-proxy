@@ -51,7 +51,7 @@
 
 ```bash
 # Клонирование репозитория
-git clone https://github.com/yourusername/nginx-proxy.git
+git clone https://github.com/AlexReplicator/nginx-proxy.git
 cd nginx-proxy
 
 # Создание конфигурации
