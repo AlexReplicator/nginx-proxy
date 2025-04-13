@@ -39,6 +39,7 @@ server {
     # add_header Strict-Transport-Security "max-age=63072000" always;
 
     location / {
+        client_max_body_size 1024M;
         proxy_pass http://{{DOMAIN}}:{{PORT}};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
