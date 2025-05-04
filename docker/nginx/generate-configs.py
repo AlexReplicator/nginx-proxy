@@ -11,8 +11,8 @@ import re
 
 def parse_domains():
     """
-    Парсит переменную окружения DOMAINS и возвращает словарь
-    с доменами и соответствующими портами.
+    Парсит переменную окружения DOMAINS.
+    Возвращает словарь вида {полный_домен: {'port': порт, 'service_name': имя_сервиса}}
     """
     domains_env = os.environ.get('DOMAINS')
     if not domains_env:
@@ -20,16 +20,21 @@ def parse_domains():
         domains_env = "{}" # Используем пустой JSON по умолчанию
 
     server_ip = os.environ.get('SERVER_IP', '127.0.0.1')
-    domains = {}
+    domains_data = {} # Изменили имя переменной для ясности
+
+    # Функция для извлечения имени сервиса (первая часть домена)
+    def get_service_name(full_domain):
+        return full_domain.split('.')[0]
 
     # Пробуем парсить как JSON
     try:
         raw_domains = json.loads(domains_env)
         for domain, port in raw_domains.items():
             clean_domain = clean_domain_name(domain)
-            domains[clean_domain] = int(port)
-        print(f"Parsed domains as JSON: {domains}")
-        return domains, server_ip
+            service_name = get_service_name(clean_domain)
+            domains_data[clean_domain] = {'port': int(port), 'service_name': service_name}
+        print(f"Parsed domains as JSON: {domains_data}")
+        return domains_data, server_ip
     except json.JSONDecodeError:
         # Если не JSON, то пробуем парсить как список
         print("DOMAINS is not valid JSON, attempting to parse as comma-separated list...")
@@ -48,9 +53,10 @@ def parse_domains():
                     port = 80
 
                 if domain: # Проверяем, что домен не пустой после очистки
-                    domains[domain] = port
-            print(f"Parsed domains as list: {domains}")
-            return domains, server_ip
+                    service_name = get_service_name(domain)
+                    domains_data[domain] = {'port': port, 'service_name': service_name}
+            print(f"Parsed domains as list: {domains_data}")
+            return domains_data, server_ip
         except Exception as e:
             print(f"ERROR: Failed to parse DOMAINS as list: {e}")
             # Возвращаем пустой словарь в случае ошибки парсинга списка
@@ -106,7 +112,7 @@ def clean_domain_name(domain):
     # Удаляем все, кроме букв, цифр, точек и дефисов
     return re.sub(r'[^a-zA-Z0-9.-]', '', domain)
 
-def generate_configs(domains, server_ip):
+def generate_configs(domains_data, server_ip): # Принимаем domains_data
     """
     Генерирует конфигурационные файлы Nginx.
     """
@@ -181,12 +187,14 @@ def generate_configs(domains, server_ip):
                     print(f"Error removing file {conf_file}: {e}")
 
     # --- Standard domains ---
-    if domains:
+    if domains_data: # Используем domains_data
         print("Generating standard domain configurations...")
         enable_ssl = os.environ.get('ENABLE_SSL', 'false').lower() == 'true'
 
-        for domain, port in domains.items():
-            print(f"Generating config for domain: {domain} -> port: {port}")
+        for domain, data in domains_data.items(): # Итерируем по domains_data
+            port = data['port']
+            service_name = data['service_name']
+            print(f"Generating config for domain: {domain} -> service: {service_name}, port: {port}")
 
             current_template_file = "http.conf.template"
             if enable_ssl:
@@ -207,9 +215,11 @@ def generate_configs(domains, server_ip):
                 with open(template_path, 'r') as f:
                     template = f.read()
 
+                # Заменяем переменные в шаблоне
                 config = template.replace('{{DOMAIN}}', domain)
                 config = config.replace('{{PORT}}', str(port))
-                config = config.replace('{{SERVER_IP}}', server_ip)
+                config = config.replace('{{SERVICE_NAME}}', service_name) # Подставляем имя сервиса
+                config = config.replace('{{SERVER_IP}}', server_ip) # SERVER_IP все еще может быть нужен в шаблонах
 
                 clean_domain_name_for_file = clean_domain_name(domain) # Используем очищенное имя для файла
                 output_path = os.path.join(output_dir, f"{clean_domain_name_for_file}.conf")
@@ -228,8 +238,8 @@ def main():
     Основная функция.
     """
     print("Starting Nginx configuration generation...")
-    domains, server_ip = parse_domains()
-    generate_configs(domains, server_ip)
+    domains_data, server_ip = parse_domains() # Получаем domains_data
+    generate_configs(domains_data, server_ip) # Передаем domains_data
     print("Nginx configuration generation completed.")
 
 if __name__ == "__main__":

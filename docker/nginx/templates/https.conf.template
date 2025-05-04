@@ -40,7 +40,8 @@ server {
 
     location / {
         client_max_body_size 1024M;
-        proxy_pass http://{{DOMAIN}}:{{PORT}};
+        # Используем имя сервиса Docker для upstream
+        proxy_pass http://{{SERVICE_NAME}}:{{PORT}};
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
