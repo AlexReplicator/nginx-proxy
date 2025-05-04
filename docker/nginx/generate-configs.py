@@ -194,7 +194,8 @@ def generate_configs(domains_data, server_ip): # Принимаем domains_data
         for domain, data in domains_data.items(): # Итерируем по domains_data
             port = data['port']
             service_name = data['service_name']
-            print(f"Generating config for domain: {domain} -> service: {service_name}, port: {port}")
+            upstream_target = f"{service_name}:{port}" # Формируем строку имя_сервиса:порт
+            print(f"Generating config for domain: {domain} -> upstream: {upstream_target}")
 
             current_template_file = "http.conf.template"
             if enable_ssl:
@@ -217,9 +218,11 @@ def generate_configs(domains_data, server_ip): # Принимаем domains_data
 
                 # Заменяем переменные в шаблоне
                 config = template.replace('{{DOMAIN}}', domain)
+                config = config.replace('{{UPSTREAM_TARGET}}', upstream_target) # Подставляем имя_сервиса:порт
+                # Убираем старые плейсхолдеры, если они еще где-то остались (на всякий случай)
+                config = config.replace('{{SERVICE_NAME}}', service_name) 
                 config = config.replace('{{PORT}}', str(port))
-                config = config.replace('{{SERVICE_NAME}}', service_name) # Подставляем имя сервиса
-                config = config.replace('{{SERVER_IP}}', server_ip) # SERVER_IP все еще может быть нужен в шаблонах
+                config = config.replace('{{SERVER_IP}}', server_ip) 
 
                 clean_domain_name_for_file = clean_domain_name(domain) # Используем очищенное имя для файла
                 output_path = os.path.join(output_dir, f"{clean_domain_name_for_file}.conf")

@@ -40,8 +40,12 @@ server {
 
     location / {
         client_max_body_size 1024M;
-        # Используем имя сервиса Docker для upstream
-        proxy_pass http://{{SERVICE_NAME}}:{{PORT}};
+        
+        # Use Docker's internal DNS resolver and resolve upstream dynamically
+        resolver 127.0.0.11 valid=30s;
+        set $service_upstream {{UPSTREAM_TARGET}}; # Placeholder for service:port
+        proxy_pass http://$service_upstream;
+
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
