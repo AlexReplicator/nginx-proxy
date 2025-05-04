@@ -20,6 +20,8 @@ services:
       - NOTIFY_EMAIL=${NOTIFY_EMAIL}
       - ENABLE_SSL=${ENABLE_SSL:-false}
       - EMAIL_FOR_SSL=${EMAIL_FOR_SSL}
+      - WILDCARD_LOCALHOST_TARGET=${WILDCARD_LOCALHOST_TARGET} # Включает/выключает wildcard
+      - WILDCARD_LOCALHOST_PORTS=${WILDCARD_LOCALHOST_PORTS}   # Определяет порты для поддоменов
     networks:
       - proxy-network
 

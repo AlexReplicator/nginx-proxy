@@ -1,0 +1,24 @@
+# Config for *.localhost wildcard domains
+
+server {
+    listen 80;
+    server_name ~^(?<subdomain>.+)\.localhost$; # Capture subdomain
+
+    # Use Docker's internal DNS resolver
+    resolver 127.0.0.11 valid=30s;
+
+    location / {
+        client_max_body_size 1024M;
+
+        # Proxy to a service named after the subdomain on the mapped port
+        # The $target_port variable is set by the map block in 00-wildcard_map.conf
+        proxy_pass http://$subdomain:$target_port; # Use mapped port
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Forwarded-Port $server_port;
+    }
+}

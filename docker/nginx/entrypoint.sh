@@ -20,4 +20,4 @@ generate_nginx_configs
 
 # Запускаем Nginx на переднем плане
 echo "Starting Nginx..."
-exec "$@" 
+exec "$@"
