@@ -82,7 +82,3 @@ jobs:
             
             bash -x ./scripts/deploy.sh;
           "
-      
-      - name: Clean up
-        if: always()
-        run: rm ~/.ssh/id_rsa
